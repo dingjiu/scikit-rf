@@ -35,18 +35,19 @@ NetworkSet Class
 
 '''
 
-import os 
-from network import average as network_average
-from network import Network, PRIMARY_PROPERTIES, COMPONENT_FUNC_DICT
+import os
+from . network import average as network_average
+from . network import Network, PRIMARY_PROPERTIES, COMPONENT_FUNC_DICT, Y_LABEL_DICT
 
-import mathFunctions as mf
+from . import mathFunctions as mf
 import zipfile
 from copy import deepcopy
 import warnings
 import numpy as npy
-import pylab as plb
+# import matplotlib.pyplot as plb
+from . util import now_string_2_dt
 # delayed imports due to circular dependencies
-# NetworkSet.from_dir : from io.general import read_all_networks 
+# NetworkSet.from_dir : from io.general import read_all_networks
 
 class NetworkSet(object):
     '''
@@ -61,7 +62,7 @@ class NetworkSet(object):
     bounds for a set of :class:`~skrf.network.Network`.
 
     The names of the :class:`NetworkSet` properties are generated
-    dynamically upon ititialization, and thus documentation for
+    dynamically upon initialization, and thus documentation for
     individual properties and methods is not available. However, the
     properties do follow the convention::
 
@@ -73,7 +74,7 @@ class NetworkSet(object):
 
             >>> my_network_set.mean_s
 
-    This accesses the  property 's', for each element in the
+    This accesses the property 's', for each element in the
     set, and **then** calculates the 'mean' of the resultant set. The
     order of operations is important.
 
@@ -85,7 +86,7 @@ class NetworkSet(object):
             >>> my_network_set.mean_s.write_touchstone('mean_response')
 
     If you are calculating functions that return scalar variables, then
-    the result is accessable through the Network property .s_re. For
+    the result is accessible through the Network property .s_re. For
     example::
 
             >>> std_s_deg = my_network_set.std_s_deg
@@ -123,8 +124,8 @@ class NetworkSet(object):
         '''
         ## type checking
         if hasattr(ntwk_set, 'values'):
-            ntwk_set = ntwk_set.values()
-            
+            ntwk_set = list(ntwk_set.values())
+
         # did they pass a list of Networks?
         if not isinstance(ntwk_set[0], Network):
             raise(TypeError('input must be list of Network types'))
@@ -142,7 +143,7 @@ class NetworkSet(object):
         # we are good to go
         self.ntwk_set = ntwk_set
         self.name = name
-        
+
         # create list of network properties, which we use to dynamically
         # create a statistical properties of this set
         network_property_list = [k+'_'+l \
@@ -159,11 +160,11 @@ class NetworkSet(object):
                 self.__add_a_func_on_property(func, network_property_name)
 
             if 'db' not in network_property_name:# != 's_db' and network_property_name != 's':
-                # db uncertainty requires a special function call see 
+                # db uncertainty requires a special function call see
                 # plot_uncertainty_bounds_s_db
                 self.__add_a_plot_uncertainty(network_property_name)
                 self.__add_a_plot_minmax(network_property_name)
-                
+
             self.__add_a_element_wise_method('plot_'+network_property_name)
             self.__add_a_element_wise_method('plot_s_db')
             self.__add_a_element_wise_method('plot_s_db_time')
@@ -174,40 +175,38 @@ class NetworkSet(object):
         for operator_name in \
                 ['__pow__','__floordiv__','__mul__','__div__','__add__','__sub__']:
             self.__add_a_operator(operator_name)
-    
-    
-    
+
     @classmethod
     def from_zip(cls, zip_file_name, sort_filenames=True, *args, **kwargs):
         '''
-        creates a NetworkSet from a zipfile of touchstones. 
-        
+        creates a NetworkSet from a zipfile of touchstones.
+
         Parameters
         -----------
         zip_file_name : string
             name of zipfile
         sort_filenames: Boolean
-            sort the filenames in teh zip file before constructing the 
+            sort the filenames in the zip file before constructing the
             NetworkSet
         \\*args,\\*\\*kwargs : arguments
             passed to NetworkSet constructor
-        
+
         Examples
         ----------
-        
+
         >>> import skrf as rf
         >>> my_set = rf.NetworkSet.from_zip('myzip.zip')
-            
+
         '''
         z = zipfile.ZipFile(zip_file_name)
         filename_list = z.namelist()
-        
+
         ntwk_list = []
-        
+
         if sort_filenames:
             filename_list.sort()
-        
-        
+
+
         for filename in filename_list:
             # try/except block in case not all files are touchstones
             n= Network()
@@ -223,33 +222,69 @@ class NetworkSet(object):
                 continue
             except:
                 pass
-        
+
         return cls(ntwk_list)
-    
+
     @classmethod
-    def from_dir(cls, dir='.', *args, **kwargs):
+    def from_dir(cls, dir='.',*args, **kwargs):
         '''
-        Create a NetworkSet from a directory containing  Networks
-        
+        Create a NetworkSet from a directory containing Networks
+
         This just calls ::
-        
+
             rf.NetworkSet(rf.read_all_networks(dir), *args, **kwargs)
-            
+
         Parameters
         ---------------
         dir : str
             directory containing Network files.
+        
         \*args, \*\*kwargs :
             passed to NetworkSet constructor
-            
+
         Examples
         ----------
-        
+
         >>> my_set = rf.NetworkSet.from_dir('./data/')
         '''
-        from io.general import read_all_networks
+        from . io.general import read_all_networks
         return cls(read_all_networks(dir), *args, **kwargs)
+        
+        
+
+    @classmethod
+    def from_s_dict(cls,d, frequency, *args, **kwargs):
+        '''
+        Create a NetworkSet from a dictionary of s-parameters
+
+        The resultant elements of the NetworkSet are named by the keys of
+        the dictionary.
+
+        Parameters
+        -------------
+        d : dict
+            dictionary of s-parameters data. values of this should be
+            :class:`numpy.ndarray` assignable to :attr:`skrf.network.Network.s`
+        frequency: :class:`~skrf.frequency.Frequency` object
+            frequency assigned to each network
+
+        \*args, \*\*kwargs :
+            passed to Network.__init__ for each key/value pair of d
+
+        Returns
+        ----------
+        ns : NetworkSet
+
+        See Also
+        ----------
+        NetworkSet.to_s_dict
+        '''
+        return cls([Network(s=d[k], frequency=frequency, name=k,
+                            *args, **kwargs)  for k in d])
+
     
+        
+
     def __add_a_operator(self,operator_name):
         '''
         adds a operator method to the NetworkSet.
@@ -264,7 +299,7 @@ class NetworkSet(object):
         def operator_func(self, other):
             if isinstance(other, NetworkSet):
                 if len(other) != len(self):
-                    raise(ValueError('Network sets must be of same length to be casacaded'))
+                    raise(ValueError('Network sets must be of same length to be cascaded'))
                 return NetworkSet([self.ntwk_set[k].__getattribute__(operator_name)(other.ntwk_set[k]) for k in range(len(self))])
 
             elif isinstance(other, Network):
@@ -290,7 +325,12 @@ class NetworkSet(object):
         '''
         returns an element of the network set
         '''
-        return self.ntwk_set[key]
+        if isinstance(key, str):
+            # if they pass a string then slice each network in this set
+            return NetworkSet([k[key] for k in self.ntwk_set],
+                              name = self.name)
+        else:
+            return self.ntwk_set[key]
 
     def __len__(self):
         '''
@@ -349,10 +389,10 @@ class NetworkSet(object):
 
         setattr(self.__class__,'plot_uncertainty_bounds_'+\
                 network_property_name,plot_func)
-    
+
         setattr(self.__class__,'plot_ub_'+\
                 network_property_name,plot_func)
-    
+
     def __add_a_plot_minmax(self,network_property_name):
         '''
 
@@ -373,20 +413,53 @@ class NetworkSet(object):
 
         setattr(self.__class__,'plot_minmax_bounds_'+\
                 network_property_name,plot_func)
-    
+
         setattr(self.__class__,'plot_mm_'+\
-                network_property_name,plot_func)            
-    
+                network_property_name,plot_func)
+
     def to_dict(self):
-        '''
+        """
         Returns a dictionary representation of the NetworkSet
-        
-        The returned dictionary has the Network names for keys, and the 
+
+        The returned dictionary has the Network names for keys, and the
         Networks as values.
-        '''
+        """
         return dict([(k.name, k) for k in self.ntwk_set])
-        
-    
+
+    def to_s_dict(ns, *args, **kwargs):
+        """
+        Converts a NetworkSet to a dictionary of s-parameters
+
+        The resultant  keys of the dictionary are the names of the Networks
+        in NetworkSet
+
+        Parameters
+        -------------
+        ns : NetworkSet
+            dictionary of s-parameters data. values of this should be
+            :class:`numpy.ndarray` assignable to :attr:`skrf.network.Network.s`
+        frequency: :class:`~skrf.frequency.Frequency` object
+            frequency assigned to each network
+
+        \*args, \*\*kwargs :
+            passed to Network.__init__ for each key/value pair of d
+
+        Returns
+        ----------
+        s_dict : dictionary
+            contains s-parameters in the form of complex numpy arrays
+
+        See Also
+        --------
+        NetworkSet.from_s_dict
+        """
+        d = ns.to_dict()
+        for k in d:
+            d[k] = d[k].s
+        return d
+
+
+
     def element_wise_method(self,network_method_name, *args, **kwargs):
         '''
         calls a given method of each element and returns the result as
@@ -400,17 +473,110 @@ class NetworkSet(object):
 
     def copy(self):
         '''
-        copies each network of the network set. 
+        copies each network of the network set.
         '''
         return NetworkSet([k.copy() for k in self.ntwk_set])
+    
+    def sort(self, key=lambda x: x.name, **kwargs):
+        '''
+        sort this network set. 
         
+        Parameters
+        -------------
+        **kwargs : dict
+            keyword args passed to builtin sorted acting on self.ntwk_set
+            
+        Examples
+        -----------
+        >>> ns = rf.NetworkSet.from_dir('mydir')
+        >>> ns.sort()
+        
+        Sort by other property 
+        >>> ns.sort(key= lambda x: x.voltage)
+        '''
+        self.ntwk_set = sorted(self.ntwk_set, key = key, **kwargs)
+        
+    def rand(self,n=1):
+        '''
+        return `n` random samples from this NetworkSet
+        
+        Parameters
+        ----------
+        n : int
+            number of samples to return 
+        '''
+        idx = npy.random.randint(0,len(self), n)
+        out = [self.ntwk_set[k] for k in idx]
+        
+        if n ==1:
+            return out[0]
+        else:
+            return out
+    
+    def filter(self,s):
+        '''
+        filter networkset based on a string in Network.name
+        
+        Notes
+        -----
+        This is just 
+        
+        `NetworkSet([k for k in self if s in k.name])`
+        
+        
+        Parameters 
+        -------------
+        s: str
+            string contained in network elements to be filtered
+        
+        Returns
+        --------
+        ns : NetworkSet
+            
+            
+        Examples
+        -----------
+        >>> ns.filter('monday')
+        '''
+        return NetworkSet([k for k in self if s in k.name])
+    
+    def scalar_mat(self, param='s',order='F'):
+        '''
+        scalar ndarray representing `param` data vs freq and element idx
+        
+        output is a 3d array with axes  (freq, ns_index, port/ri)
+        
+        freq is frequency 
+        ns_index is  index of this networkset
+        ports is a flattened re/im components of port index (len =2*nports**2)
+        '''
+        ntwk=self[0]
+        nfreq = len(ntwk)
+        # x will have the axes ( frequency,observations, ports)
+        x = npy.array([[mf.flatten_c_mat(k.__getattribute__(param)[f]) \
+            for k in self] for f in range(nfreq)])
+            
+        return x
+
+
+    def cov(self, **kw):
+        '''
+        covariance matrix 
+        
+        shape of output  will be  (nfreq, 2*nports**2, 2*nports**2)
+        '''
+        smat=self.scalar_mat(**kw)
+        return npy.array([npy.cov(k.T) for k in smat])
+
+        
+    
     @property
     def mean_s_db(self):
         '''
         the mean magnitude in dB.
 
         note:
-                the mean is taken on the magnitude before convertedto db, so
+                the mean is taken on the magnitude before converted to db, so
                         magnitude_2_db( mean(s_mag))
                 which is NOT the same as
                         mean(s_db)
@@ -425,7 +591,7 @@ class NetworkSet(object):
         the mean magnitude in dB.
 
         note:
-                the mean is taken on the magnitude before convertedto db, so
+                the mean is taken on the magnitude before converted to db, so
                         magnitude_2_db( mean(s_mag))
                 which is NOT the same as
                         mean(s_db)
@@ -437,86 +603,24 @@ class NetworkSet(object):
     @property
     def inv(self):
         return NetworkSet( [ntwk.inv for ntwk in self.ntwk_set])
-    
-    def animate(self, attr='s_deg',ylims=(-5,5),xlims = None, show=True, 
-        savefigs =False, *args, **kwargs ):
-        '''
-        animate a property of the networkset
-        
-        This loops through all elements in the NetworkSet and calls 
-        a plotting attribute (ie Network.plot_`attr`), with given \*args
-        and \*\*kwargs.  
-        
-        Parameters
-        --------------
-        attr : str
-            plotting property of a Network (ie 's_db', 's_deg', etc)
-        ylims : tuple
-            passed to ylim. needed to have consistent y-limits accross frames
-        xlims : tuple
-            passed to xlim
-        show : bool
-            show each frame as its animated
-        savefigs : bool
-            save each frame as a png
-        
-        \*args, \*\*kwargs : 
-            passed to the Network plotting function
-        
-        Notes
-        --------
-        using `label=None` will speed up animation significantly, 
-        because it prevents the legend from drawing
-        
-        Examples
-        ------------
-        >>>ns.animate('s_deg', ylims=(-5,5),label=None)
-            
-        '''
-        was_interactive = plb.isinteractive()
-        plb.ioff()
-        
-        for idx, k in enumerate(self):
-            plb.clf()
-            if 'time' in attr:
-                tmp_ntwk = k.windowed()
-                tmp_ntwk.__getattribute__('plot_'+attr)( *args, **kwargs)
-            else:
-                k.__getattribute__('plot_'+attr)( *args, **kwargs)
-            if ylims is not None:
-                plb.ylim(ylims)
-            if xlims is not None:
-                plb.xlim(xlims)
-            #rf.legend_off()
-            plb.draw();
-            if show:
-                plb.show()
-            if savefigs:
-                plb.savefig('out_%.5i'%idx+'.png')
-                print ('out_%.5i'%idx+'.png')
-        
-        if savefigs:
-            print '\nto create video paste this:\n\n!ffmpeg -r 10 -i out_%5d.png  -vcodec huffyuv out.avi\n'
-        if was_interactive:
-            plb.ion()
-        
-        
-        
+
+
+
     def add_polar_noise(self, ntwk):
         from scipy import stats
         from numpy import frompyfunc
-        
+
         gimme_norm = lambda x: stats.norm(loc=0,scale=x).rvs(1)[0]
         ugimme_norm = frompyfunc(gimme_norm,1,1)
-        
+
         s_deg_rv = npy.array(map(ugimme_norm, self.std_s_deg.s_re), dtype=float)
         s_mag_rv = npy.array(map(ugimme_norm, self.std_s_mag.s_re), dtype=float)
-        
+
         mag = ntwk.s_mag+s_mag_rv
         deg = ntwk.s_deg+s_deg_rv
         ntwk.s = mag* npy.exp(1j*npy.pi/180.*deg)
         return ntwk
-    
+
     def set_wise_function(self, func, a_property, *args, **kwargs):
         '''
         calls a function on a specific property of the networks in
@@ -600,456 +704,87 @@ class NetworkSet(object):
 
         return (ntwk_mean, lower_bound, upper_bound)
 
-    def plot_uncertainty_bounds_component(self,attribute,m=None,n=None,\
-            type='shade',n_deviations=3, alpha=.3, color_error =None,markevery_error=20,
-            ax=None,ppf=None,kwargs_error={},*args,**kwargs):
+    def datetime_index(self):
         '''
-        plots mean value of the NetworkSet with +- uncertainty bounds
-        in an Network's attribute. This is designed to represent
-        uncertainty in a scalar component of the s-parameter. for example
-        ploting the uncertainty in the magnitude would be expressed by,
-
-                mean(abs(s)) +- std(abs(s))
-
-        the order of mean and abs is important.
-
-
-        takes:
-                attribute: attribute of Network type to analyze [string]
-                m: first index of attribute matrix [int]
-                n: second index of attribute matrix [int]
-                type: ['shade' | 'bar'], type of plot to draw
-                n_deviations: number of std deviations to plot as bounds [number]
-                alpha: passed to matplotlib.fill_between() command. [number, 0-1]
-                color_error: color of the +- std dev fill shading
-                markevery_error: if type=='bar', this controls frequency
-                        of error bars
-                ax: Axes to plot on
-                ppf: post processing function. a function applied to the
-                        upper and low
-                *args,**kwargs: passed to Network.plot_s_re command used
-                        to plot mean response
-                kwargs_error: dictionary of kwargs to pass to the fill_between
-                        or errorbar plot command depending on value of type.
-
-        returns:
-                None
-
-
-        Note:
-                for phase uncertainty you probably want s_deg_unwrap, or
-                similar.  uncerainty for wrapped phase blows up at +-pi.
-
-        '''
+        Create a datetime index from networks names 
         
-        if m is None:
-            M = range(self[0].number_of_ports)
-        else:
-            M = [m]
-        if n is None:
-            N = range(self[0].number_of_ports)
-        else:
-            N = [n]
-
-        for m in M:
-            for n in N:
-                
+        this is just:
         
-                ylabel_dict = {'s_mag':'Magnitude','s_deg':'Phase (deg)',
-                        's_deg_unwrap':'Phase (deg)','s_deg_unwrapped':'Phase (deg)',
-                        's_db':'Magnitude (dB)'}
-
-                ax = plb.gca()
-
-                ntwk_mean = self.__getattribute__('mean_'+attribute)
-                ntwk_std = self.__getattribute__('std_'+attribute)
-                ntwk_std.s = n_deviations * ntwk_std.s
-
-                upper_bound = (ntwk_mean.s[:,m,n] +ntwk_std.s[:,m,n]).squeeze()
-                lower_bound = (ntwk_mean.s[:,m,n] -ntwk_std.s[:,m,n]).squeeze()
-                
-                
-                if ppf is not None:
-                    if type =='bar':
-                        warnings.warn('the \'ppf\' options doesnt work correctly with the bar-type error plots')
-                    ntwk_mean.s = ppf(ntwk_mean.s)
-                    upper_bound = ppf(upper_bound)
-                    lower_bound = ppf(lower_bound)
-                    lower_bound[npy.isnan(lower_bound)]=min(lower_bound)
-
-                if type == 'shade':
-                    ntwk_mean.plot_s_re(ax=ax,m=m,n=n,*args, **kwargs)
-                    if color_error is None:
-                        color_error = ax.get_lines()[-1].get_color()
-                    ax.fill_between(ntwk_mean.frequency.f_scaled, \
-                            lower_bound,upper_bound, alpha=alpha, color=color_error,
-                            **kwargs_error)
-                    #ax.plot(ntwk_mean.frequency.f_scaled,ntwk_mean.s[:,m,n],*args,**kwargs)
-                elif type =='bar':
-                    ntwk_mean.plot_s_re(ax=ax,m=m,n=n,*args, **kwargs)
-                    if color_error is None:
-                        color_error = ax.get_lines()[-1].get_color()
-                    ax.errorbar(ntwk_mean.frequency.f_scaled[::markevery_error],\
-                            ntwk_mean.s_re[:,m,n].squeeze()[::markevery_error], \
-                            yerr=ntwk_std.s_mag[:,m,n].squeeze()[::markevery_error],\
-                            color=color_error,**kwargs_error)
-
-                else:
-                    raise(ValueError('incorrect plot type'))
-
-                ax.set_ylabel(ylabel_dict.get(attribute,''))
-                ax.axis('tight')
-    
-    
-    def plot_minmax_bounds_component(self,attribute,m=0,n=0,\
-            type='shade', alpha=.3, color_error =None,markevery_error=20,
-            ax=None,ppf=None,kwargs_error={},*args,**kwargs):
-        '''
-        plots mean value of the NetworkSet with +- uncertainty bounds
-        in an Network's attribute. This is designed to represent
-        uncertainty in a scalar component of the s-parameter. for example
-        ploting the uncertainty in the magnitude would be expressed by,
-
-                mean(abs(s)) +- std(abs(s))
-
-        the order of mean and abs is important.
-
-
-        takes:
-                attribute: attribute of Network type to analyze [string]
-                m: first index of attribute matrix [int]
-                n: second index of attribute matrix [int]
-                type: ['shade' | 'bar'], type of plot to draw
-                n_deviations: number of std deviations to plot as bounds [number]
-                alpha: passed to matplotlib.fill_between() command. [number, 0-1]
-                color_error: color of the +- std dev fill shading
-                markevery_error: if type=='bar', this controls frequency
-                        of error bars
-                ax: Axes to plot on
-                ppf: post processing function. a function applied to the
-                        upper and low
-                *args,**kwargs: passed to Network.plot_s_re command used
-                        to plot mean response
-                kwargs_error: dictionary of kwargs to pass to the fill_between
-                        or errorbar plot command depending on value of type.
-
-        returns:
-                None
-
-
-        Note:
-                for phase uncertainty you probably want s_deg_unwrap, or
-                similar.  uncerainty for wrapped phase blows up at +-pi.
-
-        '''
-        ylabel_dict = {'s_mag':'Magnitude','s_deg':'Phase (deg)',
-                's_deg_unwrap':'Phase (deg)','s_deg_unwrapped':'Phase (deg)',
-                's_db':'Magnitude (dB)'}
-
-        ax = plb.gca()
-
-        ntwk_mean = self.__getattribute__('mean_'+attribute)
-        
-
-        lower_bound = self.__getattribute__('min_'+attribute).s_re[:,m,n].squeeze()
-        upper_bound = self.__getattribute__('max_'+attribute).s_re[:,m,n].squeeze()
-       
+        [rf.now_string_2_dt(k.name ) for k in self]
         
         
-        if ppf is not None:
-            if type =='bar':
-                warnings.warn('the \'ppf\' options doesnt work correctly with the bar-type error plots')
-            ntwk_mean.s = ppf(ntwk_mean.s)
-            upper_bound = ppf(upper_bound)
-            lower_bound = ppf(lower_bound)
-            lower_bound[npy.isnan(lower_bound)]=min(lower_bound)
-
-        if type == 'shade':
-            ntwk_mean.plot_s_re(ax=ax,m=m,n=n,*args, **kwargs)
-            if color_error is None:
-                color_error = ax.get_lines()[-1].get_color()
-            ax.fill_between(ntwk_mean.frequency.f_scaled, \
-                    lower_bound,upper_bound, alpha=alpha, color=color_error,
-                    **kwargs_error)
-            #ax.plot(ntwk_mean.frequency.f_scaled,ntwk_mean.s[:,m,n],*args,**kwargs)
-        elif type =='bar':
-            raise (NotImplementedError)
-            ntwk_mean.plot_s_re(ax=ax,m=m,n=n,*args, **kwargs)
-            if color_error is None:
-                color_error = ax.get_lines()[-1].get_color()
-            ax.errorbar(ntwk_mean.frequency.f_scaled[::markevery_error],\
-                    ntwk_mean.s_re[:,m,n].squeeze()[::markevery_error], \
-                    yerr=ntwk_std.s_mag[:,m,n].squeeze()[::markevery_error],\
-                    color=color_error,**kwargs_error)
-
-        else:
-            raise(ValueError('incorrect plot type'))
-
-        ax.set_ylabel(ylabel_dict.get(attribute,''))
-        ax.axis('tight')
-    
-    
-    def plot_uncertainty_bounds_s_db(self,*args, **kwargs):
         '''
-        this just calls
-                plot_uncertainty_bounds(attribute= 's_mag','ppf':mf.magnitude_2_db*args,**kwargs)
-        see plot_uncertainty_bounds for help
-
-        '''
-        kwargs.update({'attribute':'s_mag','ppf':mf.magnitude_2_db})
-        self.plot_uncertainty_bounds_component(*args,**kwargs)
-    
-    def plot_minmax_bounds_s_db(self,*args, **kwargs):
-        '''
-        this just calls
-                plot_uncertainty_bounds(attribute= 's_mag','ppf':mf.magnitude_2_db*args,**kwargs)
-        see plot_uncertainty_bounds for help
-
-        '''
-        kwargs.update({'attribute':'s_mag','ppf':mf.magnitude_2_db})
-        self.plot_minmax_bounds_component(*args,**kwargs)
-    
-    def plot_minmax_bounds_s_db10(self,*args, **kwargs):
-        '''
-        this just calls
-                plot_uncertainty_bounds(attribute= 's_mag','ppf':mf.magnitude_2_db*args,**kwargs)
-        see plot_uncertainty_bounds for help
-
-        '''
-        kwargs.update({'attribute':'s_mag','ppf':mf.mag_2_db10})
-        self.plot_minmax_bounds_component(*args,**kwargs)
-    
-    def plot_uncertainty_bounds_s_time_db(self,*args, **kwargs):
-        '''
-        this just calls
-                plot_uncertainty_bounds(attribute= 's_mag','ppf':mf.magnitude_2_db*args,**kwargs)
-        see plot_uncertainty_bounds for help
-
-        '''
-        kwargs.update({'attribute':'s_time_mag','ppf':mf.magnitude_2_db})
-        self.plot_uncertainty_bounds_component(*args,**kwargs)
-    
-    def plot_minmax_bounds_s_time_db(self,*args, **kwargs):
-        '''
-        this just calls
-                plot_uncertainty_bounds(attribute= 's_mag','ppf':mf.magnitude_2_db*args,**kwargs)
-        see plot_uncertainty_bounds for help
-
-        '''
-        kwargs.update({'attribute':'s_time_mag','ppf':mf.magnitude_2_db})
-        self.plot_minmax_bounds_component(*args,**kwargs)
-    
-    def plot_uncertainty_decomposition(self, m=0,n=0):
-        '''
-        plots the total and  component-wise uncertainty
-        
-        Parameters
-        --------------
-        m : int
-            first s-parameters index
-        n :
-            second s-parameter index
-            
-        '''
-        if self.name is not None:
-            plb.title(r'Uncertainty Decomposition: %s $S_{%i%i}$'%(self.name,m,n))
-        self.std_s.plot_s_mag(label='Distance', m=m,n=n)
-        self.std_s_re.plot_s_mag(label='Real',  m=m,n=n)
-        self.std_s_im.plot_s_mag(label='Imaginary',  m=m,n=n)
-        self.std_s_mag.plot_s_mag(label='Magnitude',  m=m,n=n)
-        self.std_s_arcl.plot_s_mag(label='Arc-length',  m=m,n=n)
-    
-
-    def plot_uncertainty_bounds_s(self, multiplier =200, *args, **kwargs):
-        '''
-        Plots complex uncertianty bounds plot on smith chart. 
-        
-        This function plots the complex uncertainty of a NetworkSet 
-        as circles on the smith chart. At each frequency a circle  
-        with radii proportional to the complex standard deviation 
-        of the set at that frequency is drawn. Due to the fact that 
-        the `markersize` argument is in pixels, the radii can scaled by 
-        the input argument  `multiplier`. 
-        
-        default kwargs are
-            {
-            'marker':'o',
-            'color':'b',
-            'mew':0,
-            'ls':'',
-            'alpha':.1,
-            'label':None,
-            }
-        
-        Parameters
-        -------------
-        multipliter : float
-            controls the circle sizes, by multiples of the standard 
-            deviation.
-        
-            
-        
-        '''
-        default_kwargs = {
-            'marker':'o',
-            'color':'b',
-            'mew':0,
-            'ls':'',
-            'alpha':.1,
-            'label':None,
-            }
-        default_kwargs.update(**kwargs)
-        
-        
-        
-        if plb.isinteractive():
-            was_interactive = True
-            plb.interactive(0)
-        else:
-            was_interactive = False
-        
-        [self.mean_s[k].plot_s_smith(*args, ms = self.std_s[k].s_mag*multiplier, **default_kwargs) for k in range(len(self[0]))]
-        
-        if was_interactive: 
-            plb.interactive(1)
-        plb.draw()
-        plb.show()
-        
-
-
-    def plot_logsigma(self, label_axis=True, *args,**kwargs):
-        '''
-        plots the uncertainty for the set in units of log-sigma. 
-        Log-sigma is the complex standard deviation, plotted in units
-        of dB's. 
-        
-        Parameters
-        ------------
-        \\*args, \\*\\*kwargs : arguments
-            passed to self.std_s.plot_s_db()
-        '''
-        self.std_s.plot_s_db(*args,**kwargs)
-        if label_axis:
-            plb.ylabel('Standard Deviation(dB)')
-    
-    def signature(self,m=0,n=0,from_mean=False, operation='__sub__',
-        component='s_mag',vmax = None,  *args, **kwargs):
-        '''
-        visualization of relative changes in a NetworkSet.
-
-        Creates a colored image representing the devation of each
-        Network from the from mean Network of the NetworkSet, vs
-        frequency.
-
-
-        Parameters
-        ------------
-        m : int
-            first s-parameters index
-        n : int
-            second s-parameter index
-        from_mean : Boolean
-            calculate distance from mean if True. or distance from 
-            first network in networkset if False.
-        operation : ['__sub__', '__div__'], ..
-            operation to apply between each network and the reference 
-            network, which is either the mean, or the initial ntwk.
-        component : ['s_mag','s_db','s_deg' ..]
-            scalar component of Network to plot on the imshow. should 
-            be a property of the Network object.  
-            
-        vmax : number
-            sets upper limit of colorbar, if None, will be set to
-            3*mean of the magnitude of the complex difference
-        \*args,\*\*kwargs : arguments, keyword arguments
-            passed to :func:`~pylab.imshow`
+        return [now_string_2_dt(k.name ) for k in self]
 
         
-        '''
-        if from_mean:
-            diff_set = self.__getattribute__(operation)(self.mean_s)
-        else:
-            diff_set = self.__getattribute__(operation)(self.ntwk_set[0])
-        
-        sig = npy.array([diff_set[k].__getattribute__(component)[:,m,n] \
-            for k in range(len(self))])
-        if vmax is None:
-            vmax == 3*sig.mean()
-        plb.imshow(sig, vmax = vmax, *args, **kwargs)
-        plb.axis('tight')
-        plb.ylabel('Network \#')
-        c_bar = plb.colorbar()
-        c_bar.set_label('Distance From Mean')
-
-
     # io
     def write(self, file=None,  *args, **kwargs):
         '''
         Write the NetworkSet to disk using :func:`~skrf.io.general.write`
-        
-        
+
+
         Parameters
         -----------
         file : str or file-object
-            filename or a file-object. If left as None then the 
-            filename will be set to Calibration.name, if its not None. 
+            filename or a file-object. If left as None then the
+            filename will be set to Calibration.name, if its not None.
             If both are None, ValueError is raised.
         \*args, \*\*kwargs : arguments and keyword arguments
             passed through to :func:`~skrf.io.general.write`
-        
+
         Notes
         ------
         If the self.name is not None and file is  can left as None
         and the resultant file will have the `.ns` extension appended
-        to the filename. 
-        
+        to the filename.
+
         Examples
         ---------
         >>> ns.name = 'my_ns'
         >>> ns.write()
-        
+
         See Also
         ---------
         skrf.io.general.write
         skrf.io.general.read
-        
+
         '''
-        # this import is delayed untill here because of a circular depency
-        from io.general import write
-        
+        # this import is delayed until here because of a circular dependency
+        from . io.general import write
+
         if file is None:
             if self.name is None:
                  raise (ValueError('No filename given. You must provide a filename, or set the name attribute'))
             file = self.name
 
-        write(file,self, *args, **kwargs) 
+        write(file,self, *args, **kwargs)
 
-    
+
     def write_spreadsheet(self, *args, **kwargs):
         '''
         Write contents of network to a spreadsheet, for your boss to use.
-        
-        See Also 
+
+        See Also
         ---------
         skrf.io.general.network_2_spreadsheet
         '''
-        from io.general import networkset_2_spreadsheet
+        from . io.general import networkset_2_spreadsheet
         networkset_2_spreadsheet(self, *args, **kwargs)
-    
+
     def ntwk_attr_2_df(self, attr='s_db',m=0, n=0, *args, **kwargs):
         '''
-        Converts an attributes of the Networks within a NetworkSet to a 
+        Converts an attributes of the Networks within a NetworkSet to a
         Pandas DataFrame
-        
+
         Examples
         ---------
         df = ns.ntwk_attr_2_df('s_db',m=1,n=0)
         df.to_excel('output.xls') # see Pandas docs for more info
-        
+
         '''
         from pandas import DataFrame, Series, Index
         index = Index(
-            self[0].frequency.f_scaled, 
+            self[0].frequency.f_scaled,
             name='Freq(%s)'%self[0].frequency.unit
             )
         df = DataFrame(
@@ -1059,7 +794,7 @@ class NetworkSet(object):
             index = index,
             )
         return df
-    
+
 def plot_uncertainty_bounds_s_db(ntwk_list, *args, **kwargs):
     NetworkSet(ntwk_list).plot_uncertainty_bounds_s_db(*args, **kwargs)
 
@@ -1112,59 +847,30 @@ def func_on_networks(ntwk_list, func, attribute='s',name=None, *args,\
 # short hand name for convenience
 fon = func_on_networks
 
-def s_dict_to_ns(d, frequency, *args, **kwargs):
-    '''
-    Converts a dictionary of s-parameters to a NetworkSet
-    
-    The resultant elements of the NetworkSet are named by the keys of
-    the dictionary.
-    
-    Parameters
-    -------------
-    d : dict
-        dictionary of s-parameters data. values of this should be 
-        :class:`numpy.ndarray` assignable to :attr:`skrf.network.Network.s`
-    frequency: :class:`~skrf.frequency.Frequency` object
-        frequency assigned to each network
-    
-    \*args, \*\*kwargs : 
-        passed to Network.__init__ for each key/value pair of d
-    
-    Returns
-    ----------
-    ns : NetworkSet
-    '''
-    return NetworkSet([\
-        Network(
-            s=d[k], 
-            frequency =frequency, 
-            name=k, 
-            *args, **kwargs) 
-        for k in d])
 
 def getset(ntwk_dict, s, *args, **kwargs):
     '''
     Creates a :class:`NetworkSet`, of all :class:`~skrf.network.Network`s
-    objects in a dictionary that contain `s` in its key. This is useful 
-    for dealing with the output of 
+    objects in a dictionary that contain `s` in its key. This is useful
+    for dealing with the output of
     :func:`~skrf.io.general.load_all_touchstones`, which contains
     Networks grouped by some kind of naming convention.
-    
+
     Parameters
     ------------
     ntwk_dict : dictionary of Network objects
         network dictionary that contains a set of keys `s`
     s : string
-        string contained in the keys of ntwk_dict that are to be in the 
+        string contained in the keys of ntwk_dict that are to be in the
         NetworkSet that is returned
     \*args,\*\*kwargs : passed to NetworkSet()
-    
+
     Returns
     --------
     ntwk_set :  NetworkSet object
-        A NetworkSet that made from values of ntwk_dict with `s` in 
+        A NetworkSet that made from values of ntwk_dict with `s` in
         their key
-        
+
     Examples
     ---------
     >>>ntwk_dict = rf.load_all_touchstone('my_dir')
@@ -1175,5 +881,5 @@ def getset(ntwk_dict, s, *args, **kwargs):
     if len(ntwk_list) > 0:
         return NetworkSet( ntwk_list,*args, **kwargs)
     else:
-        print 'Warning: No keys in ntwk_dict contain \'%s\''%s
-        return None 
+        print('Warning: No keys in ntwk_dict contain \'%s\''%s)
+        return None

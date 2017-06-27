@@ -12,330 +12,244 @@ Contains Media class.
 import warnings
 
 import numpy as npy
+from numpy import real, imag, ones, any, gradient, array
 from scipy import stats
 from scipy.constants import  c, inch, mil
 
 from ..frequency import Frequency
 from ..network import Network, connect
+
 from .. import tlineFunctions as tf
 from .. import mathFunctions as mf
-from ..mathFunctions import ALMOST_ZERO
 
+from ..constants import to_meters ,ZERO
+
+from abc import ABCMeta, abstractmethod, abstractproperty
+import re
+from copy import deepcopy as copy
 
 class Media(object):
     '''
-    The base-class for all transmission line mediums.
-
-    The :class:`Media` object provides generic methods to produce   :class:`~skrf.network.Network`'s for any transmision line medium, such  as :func:`line` and :func:`delay_short`.
-
-    The initializer for this class has flexible argument types. This
-    allows for the important attributes of the :class:`Media` object
-    to be dynamic. For example, if a Media object's propagation constant
-    is a function of some attribute of that object, say `conductor_width`,
-    then the propagation constant will change when that attribute
-    changes. See :func:`__init__` for details.
-
-
-    The network creation methods build off of each other. For example,
-    the specicial load cases, suc as :func:`short` and :func:`open` call
-    :func:`load` with given arguments for Gamma0, and the delay_ and
-    shunt_ functions call :func:`line` and :func:`shunt` respectively.
-    This minimizes re-implementation.
-
-    Most methods initialize the :class:`~skrf.network.Network` by
-    calling :func:`match` to create a 'blank'
-    :class:`~skrf.network.Network`, and then fill in the s-matrix.
+    Abstract Base Class for a single mode on a transmission line media.
     
     
+    This class init's with `frequency` and `z0` (the port impedance);
+    attributes shared by all media. Methods defined here make use of the 
+    properties :
     
+    * `gamma` - (complex) propgation constant
+    * `Z0` - (complex) characteristic impedance
+    
+    Which define the properties of specific media. Any sub-class of Media 
+    must implement these properties. `gamma` and `Z0` should return 
+    complex arrays of the same length as `frequency`. `gamma` must 
+    follow the convention,
+    
+    * positive real(gamma) = attenuation
+    * positive imag(gamma) = forward propagation
+    
+    Parameters
+    --------------
+    frequency : :class:`~skrf.frequency.Frequency` object
+        frequency band of this transmission line medium. If None, will 
+        default to  1-10ghz, 
+
+
+    z0 : number, array-like, or None
+        the port impedance for media. Only needed if  its different
+        from the characterisitc impedance of the transmission
+        line. if z0 is None then will default to Z0
+
+
+    Notes
+    --------
+    The z0 parameter is needed in some cases. 
+    :class:`~skrf.media.rectangularWaveguide.RectangularWaveguide`
+    is an example  where you may need this, because the
+    characteristic impedance is frequency dependent, but the
+    touchstone's created by most VNA's have z0=1, or 50. so to 
+    prevent accidental impedance mis-match, you may want to manually
+    set the z0 .
     '''
-    def __init__(self, frequency,  propagation_constant,
-            characteristic_impedance, z0=None):
-        '''
-        The Media initializer.
-
-        This initializer has flexible argument types. The parameters
-        `propagation_constant`, `characterisitc_impedance` and `z0` can
-        all be either static or dynamic. This is achieved by allowing
-        those arguments to be either:
-         * functions which take no arguments or
-         * values (numbers or arrays)
-
-        In the case where the media's propagation constant may change
-        after initialization, because you adjusted a parameter of the
-        media, then passing the propagation_constant as a function
-        allows it to change when the media's parameters do.
-
-        Parameters
-        --------------
-        frequency : :class:`~skrf.frequency.Frequency` object
-                frequency band of this transmission line medium
-
-        propagation_constant : number, array-like, or a function
-                propagation constant for the medium.
-
-        characteristic_impedance : number,array-like, or a function
-                characteristic impedance of transmission line medium.
-
-        z0 : number, array-like, or a function
-                the port impedance for media , IF its different
-                from the characterisitc impedance of the transmission
-                line medium  (None) [a number].
-                if z0= None then will set to characterisitc_impedance
+    __metaclass__ = ABCMeta
+    def __init__(self, frequency=None, z0=None):
+        if frequency is None:
+            frequency = Frequency(1,10,101,'ghz')
         
-        See Also
-        ---------
-        
-        :func:`from_csv` : function to create a
-            Media object from a csv file containing gamma/z0
-
-
-        Notes
-        ------
-        `propagation_constant` must adhere to the following convention,
-         * positive real(gamma) = attenuation
-         * positive imag(gamma) = forward propagation
-
-        the z0 parameter is needed in some cases. For example, the
-        :class:`~skrf.media.rectangularWaveguide.RectangularWaveguide`
-        is an example  where you may need this, because the
-        characteristic impedance is frequency dependent, but the
-        touchstone's created by most VNA's have z0=1
-        '''
         self.frequency = frequency.copy()
-
-        self.propagation_constant = propagation_constant
-        self.characteristic_impedance = characteristic_impedance
-
-        if z0 is None:
-            z0 = characteristic_impedance
         self.z0 = z0
 
-        # convinience names
-        self.delay = self.line
-
-    def __getstate__(self):
+    def mode(self,  **kw):
         '''
-        method needed to allow for pickling
-        '''
-        d = self.__dict__.copy()
-        del d['delay'] # cant pickle instance methods
-        return(d)
-        #return {k: self.__dict__[k] for k in \
-        #    ['frequency','_characteristic_impedance','_propagation_constant','_z0']}
+        create another mode in this medium 
         
+        convenient way to copy this media object, with 
+        '''
+        out = copy(self)
+        for k in kw:
+            setattr(self, k, kw[k])
+        return out
+
+    def copy(self):
+        return copy(self)
+            
     def __eq__(self,other):
         '''
-        test for numerical equality (up to skrf.mathFunctions.ALMOST_ZERO)
+        test for numerical equality (up to skrf.constants.ZERO)
         '''
-        
+
         if self.frequency != other.frequency:
             return False
-        
-        if max(abs(self.characteristic_impedance - \
-                other.characteristic_impedance)) > ALMOST_ZERO:
+
+        if max(abs(self.Z0 - other.Z0)) > ZERO:
             return False
-            
-        if max(abs(self.propagation_constant - \
-                other.propagation_constant)) > ALMOST_ZERO:
+
+        if max(abs(self.gamma - other.gamma)) > ZERO:
             return False
-        
-        if max(abs(self.z0 - other.z0)) > ALMOST_ZERO:
+
+        if max(abs(self.z0 - other.z0)) > ZERO:
             return False
-        
+
         return True
-        
+
     def __len__(self):
         '''
         length of frequency axis
-        '''    
-        return len(frequency)
-        
-    ## Properties
-    # note these are made so that a Media type can be constructed with
-    # propagation_constant, characteristic_impedance, and z0 either as:
-    #       dynamic properties (if they pass a function)
-    #       static ( if they pass values)
+        '''
+        return len(self.frequency)
+
+    @property
+    def npoints(self):
+        return self.frequency.npoints
+    @npoints.setter
+    def npoints(self,val):
+        self.frequency.npoints = val
     
     @property
-    def propagation_constant(self):
+    def z0(self):
+        if self._z0 is None:
+            return self.Z0
+        return self._z0*ones(len(self))
+        
+    @z0.setter
+    def z0(self, val):
+        self._z0 = val
+
+    @abstractproperty
+    def gamma(self):
         '''
         Propagation constant
 
-        The propagation constant can be either a number, array-like, or
-        a function. If it is a function is must take no arguments. The
-        reason to make it a function is if you want the propagation
-        constant to be dynamic, meaning changing with some attribute
-        of the media. See :func:`__init__` for more explanation.
-
         Returns
         ---------
-        propagation_constant : :class:`numpy.ndarray`
+        gamma : :class:`numpy.ndarray`
                 complex propagation constant for this media
 
         Notes
         ------
-        `propagation_constant` must adhere to the following convention,
-         * positive real(propagation_constant) = attenuation
-         * positive imag(propagation_constant) = forward propagation
+        `gamma` must adhere to the following convention,
+         * positive real(gamma) = attenuation
+         * positive imag(gamma) = forward propagation
         '''
-        try:
-            return self._propagation_constant()
-        except(TypeError):
-            # _propagation_constant is not a function, so it is 
-            # either a number or a vector. do some 
-            # shape checking and vectorize it if its a number
-            try:
-                if len(self._propagation_constant) != \
-                    len(self.frequency):
-                    raise(IndexError('frequency and propagation_constant impedance have different lengths ')) 
-            except(TypeError):
-                # _propagation_constant has no len,  must be a 
-                # number, return a vectorized copy
-                return self._propagation_constant *\
-                    npy.ones(len(self.frequency))
-            
-            return self._propagation_constant
-                  
-    @propagation_constant.setter
-    def propagation_constant(self, new_propagation_constant):
-        self._propagation_constant = new_propagation_constant
-    gamma = propagation_constant
-    @property
-    def characteristic_impedance(self):
-        '''
-        Characterisitc impedance
-
-        The characteristic_impedance can be either a number, array-like, or
-        a function. If it is a function is must take no arguments. The
-        reason to make it a function is if you want the characterisitc
-        impedance to be dynamic, meaning changing with some attribute
-        of the media. See :func:`__init__` for more explanation.
-
-        Returns
-        ----------
-        characteristic_impedance : :class:`numpy.ndarray`
-        '''
-        try:
-            return self._characteristic_impedance()
-        except(TypeError):
-            # _characteristic_impedance is not a function, so it is 
-            # either a number or a vector. do some 
-            # shape checking and vectorize it if its a number
-            try:
-                if len(self._characteristic_impedance) != \
-                    len(self.frequency):
-                    raise(IndexError('frequency and characteristic_impedance have different lengths ')) 
-            except(TypeError):
-                # _characteristic_impedance has no len,  must be a 
-                # number, return a vectorized copy
-                return self._characteristic_impedance *\
-                    npy.ones(len(self.frequency))
-            
-            return self._characteristic_impedance
-
-    @characteristic_impedance.setter
-    def characteristic_impedance(self, new_characteristic_impedance):
-        self._characteristic_impedance = new_characteristic_impedance
-    Z0 = characteristic_impedance
+        return None
     
+    @gamma.setter
+    def gamma(self, val):
+        pass
+        
     @property
-    def z0(self):
+    def alpha(self):
         '''
-        Port Impedance
-
-        The port impedance  is usually equal to the
-        :attr:`characteristic_impedance`. Therefore, if the port
-        impedance is `None` then this will return
-        :attr:`characteristic_impedance`.
-
-        However, in some cases such as rectangular waveguide, the port
-        impedance is traditionally set to 1 (normalized). In such a case
-        this property may be used.
-
-        The Port Impedance can be either a number, array-like, or
-        a function. If it is a function is must take no arguments. The
-        reason to make it a function is if you want the Port Impedance
-        to be dynamic, meaning changing with some attribute
-        of the media. See :func:`__init__` for more explanation.
-
-
-        Returns
-        ----------
-        port_impedance : :class:`numpy.ndarray`
-                the media's port impedance
+        real (attenuation) component of gamma
         '''
-        try:
-            result =  self._z0()
-            return result
+        return real(self.gamma)
         
-        except(TypeError):
-            try:
-                if len(self._z0) != len(self.characteristic_impedance):
-                    raise(IndexError('z0 and characterisitc impedance have different shapes '))                        
-            except(TypeError):
-                # z0 has no len,  must be a number, so vectorize it
-                return self._z0 *npy.ones(len(self.characteristic_impedance))
-            
-            
-        
-        return self._z0
-        
-    @z0.setter
-    def z0(self, new_z0):
-        self._z0 = new_z0
-    portz0 = z0
+    @property
+    def beta(self):
+        '''
+        imaginary (propagating) component of gamma
+        '''
+        return imag(self.gamma)
     
+    @abstractproperty
+    def Z0(self):
+        return None
+    
+    @Z0.setter
+    def Z0(self, val):
+        pass 
+        
+    
+
     @property
     def v_p(self):
         '''
         Complex phase velocity (in m/s)
-        
-        .. math:: 
+
+        .. math::
             j \cdot \\omega / \\gamma
-        
+
         Notes
         -------
-        The `j` is used so that real phase velocity corresponds to 
+        The `j` is used so that real phase velocity corresponds to
         propagation
-        
+
         where:
-        * :math:`\\omega` is angular frequency (rad/s), 
+        * :math:`\\omega` is angular frequency (rad/s),
         * :math:`\\gamma` is complex propagation constant (rad/m)
-        
+
         See Also
         -----------
         propgation_constant
-        
+
         '''
-        return 1j*(self.frequency.w/self.propagation_constant)
-        
-    
+        return 1j*(self.frequency.w/self.gamma)
+
+
     @property
     def v_g(self):
         '''
         Complex group velocity (in m/s)
-        
-        .. math:: 
+
+        .. math::
             j \cdot d \\omega / d \\gamma
-        
-        
+
+
         where:
-        * :math:`\\omega` is angular frequency (rad/s), 
+        * :math:`\\omega` is angular frequency (rad/s),
         * :math:`\\gamma` is complex propagation constant (rad/m)
+    
+        Notes
+        -----
+        the `j` is used to make propgation real, this is needed  because 
+        skrf defined the gamma as \\gamma= \\alpha +j\\beta.
         
+    
+        References 
+        -------------
+        https://en.wikipedia.org/wiki/Group_velocity
+
         See Also
         -----------
         propgation_constant
         v_p
         '''
+        dw = self.frequency.dw
+        dk = gradient(self.gamma)
+
+        return dw/dk
+
+
+    def get_array_of(self,x):
+        try:
+            if len(x)!= len(self):
+                # we have to make a decision
+                pass
+        except(TypeError):
+            y = x* ones(len(self))
         
-        dw = npy.diff(self.frequency.w)
-        dk = npy.diff(self.propagation_constant)
-        
-        return 1j*dw/dk
-            
-    
+        return y
+
     ## Other Functions
     def theta_2_d(self,theta,deg=True, bc = True):
         '''
@@ -349,46 +263,46 @@ class Media(object):
                 electrical length, at band center (see deg for unit)
         deg : Boolean
                 is theta in degrees?
-        
+
         bc : bool
                 evaluate only at band center, or across the entire band?
-                
+
         Returns
         --------
         d : number, array-like
                 physical distance in meters
 
-        
+
         '''
         if deg == True:
             theta = mf.degree_2_radian(theta)
 
-        gamma = self.propagation_constant
+        gamma = self.gamma
         if bc:
-                return 1.0*theta/npy.imag(gamma[gamma.size/2])
+                return 1.0*theta/npy.imag(gamma[int(gamma.size/2)])
         else:
                 return 1.0*theta/npy.imag(gamma)
 
     def electrical_length(self, d,deg=False):
         '''
         calculates the electrical length for a given distance
-        
-        
+
+
         Parameters
         ----------
         d: number or array-like
             delay distance, in meters
-        
+
         deg: Boolean
             return electral length in deg?
 
         Returns
         --------
         theta: number or array-like
-            electrical length in radians or degrees, depending on  
+            electrical length in radians or degrees, depending on
             value of deg.
         '''
-        gamma = self.propagation_constant
+        gamma = self.gamma
 
         if deg == False:
             return  gamma*d
@@ -398,7 +312,7 @@ class Media(object):
     ## Network creation
 
     # lumped elements
-    def match(self,nports=1, z0=None, **kwargs):
+    def match(self,nports=1, z0=None, z0_norm=False, **kwargs):
         '''
         Perfect matched load (:math:`\\Gamma_0 = 0`).
 
@@ -407,10 +321,12 @@ class Media(object):
         nports : int
                 number of ports
         z0 : number, or array-like
-                characterisitc impedance. Default is
+                port impedance. Default is
                 None, in which case the Media's :attr:`z0` is used.
                 This sets the resultant Network's
                 :attr:`~skrf.network.Network.z0`.
+        z0_norm :bool
+            is z0  normalized to this media's `z0`?
         \*\*kwargs : key word arguments
                 passed to :class:`~skrf.network.Network` initializer
 
@@ -425,12 +341,19 @@ class Media(object):
                 >>> my_match = my_media.match(2,z0 = 50, name='Super Awesome Match')
 
         '''
+        
         result = Network(**kwargs)
         result.frequency = self.frequency
         result.s =  npy.zeros((self.frequency.npoints,nports, nports),\
                 dtype=complex)
         if z0 is None:
             z0 = self.z0
+        elif isinstance(z0,str):
+            z0 = parse_z0(z0)* self.z0
+            
+        if z0_norm:
+            z0 = z0*self.z0
+        
         result.z0=z0
         return result
 
@@ -511,7 +434,7 @@ class Media(object):
         '''
 
         return self.load(1., nports, **kwargs)
-    
+
     def resistor(self, R, *args, **kwargs):
         '''
         Resistor
@@ -528,8 +451,8 @@ class Media(object):
 
         Returns
         --------
-        resistor : a 2-port :class:`~skrf.network.Network` 
-                
+        resistor : a 2-port :class:`~skrf.network.Network`
+
         See Also
         ---------
         match : function called to create a 'blank' network
@@ -541,8 +464,8 @@ class Media(object):
         y[:,0,1] = -1./R
         y[:,1,0] = -1./R
         result.y = y
-        return result    
-    
+        return result
+
     def capacitor(self, C, **kwargs):
         '''
         Capacitor
@@ -559,8 +482,8 @@ class Media(object):
 
         Returns
         --------
-        capacitor : a 2-port :class:`~skrf.network.Network` 
-                
+        capacitor : a 2-port :class:`~skrf.network.Network`
+
 
         See Also
         ---------
@@ -575,7 +498,7 @@ class Media(object):
         y[:,1,0] = -1j*w*C
         result.y = y
         return result
-        
+
     def inductor(self, L, **kwargs):
         '''
         Inductor
@@ -591,8 +514,8 @@ class Media(object):
 
         Returns
         --------
-        inductor : a 2-port :class:`~skrf.network.Network` 
-                
+        inductor : a 2-port :class:`~skrf.network.Network`
+
 
         See Also
         ---------
@@ -610,8 +533,8 @@ class Media(object):
 
     def impedance_mismatch(self, z1, z2, **kwargs):
         '''
-        Two-port network for a an impedance miss-match
-        
+        Two-port network for an impedance mismatch
+
 
         Parameters
         ----------
@@ -626,7 +549,7 @@ class Media(object):
         Returns
         --------
         missmatch : :class:`~skrf.network.Network` object
-                a 2-port network representing the impedance missmatch
+                a 2-port network representing the impedance mismatch
 
         Notes
         --------
@@ -699,16 +622,17 @@ class Media(object):
                     (npy.ones((n,n))-npy.eye(n))
         return result
 
-        
+
     # transmission line
-    
-    def to_meters(self, d, unit='m'):
+
+    def to_meters(self, d, unit='deg'):
         '''
-        Translate various  units of distance into meters 
-        
-        This is a method of media to allow for electrical lengths as 
-        inputs
-        
+        Translate various  units of distance into meters
+
+        This is a method of media to allow for electrical lengths as
+        inputs.  For dispersive media, mean group velocity is used to 
+        translate time-based units to distance.
+
         Parameters
         ------------
         d : number or array-like
@@ -716,28 +640,32 @@ class Media(object):
         unit : str
             the unit to that x is in:
             ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
-            
+
+        See Also
+        ----------
+        skrf.constants.to_meters
         '''
         unit = unit.lower()
+        #import pdb;pdb.set_trace()
+        
         d_dict ={'deg':self.theta_2_d(d,deg=True),
                  'rad':self.theta_2_d(d,deg=False),
-                 'm':d,
-                 'cm':1e-2*d,
-                 'mm':1e-3*d,
-                 'um':1e-6*d,
-                 'in':d*inch,
-                 'mil': d*mil,
-                 's':d*c,
-                 'us':d*1e-6*c,
-                 'ns':d*1e-9*c,
-                 'ps':d*1e-12*c,
                  }
-        try:
-                return d_dict[unit]
-        except(KeyError):
-                raise(ValueError('Incorrect unit'))
         
-        
+        if unit in d_dict: 
+            return d_dict[unit]
+        else:
+            # mean group velocity is used to translate time-based
+            # units to distance
+            if 's' in unit:
+                # they are specifiying  a time unit so calculate
+                # the group velocity. (note this fails for media of 
+                # too little points, as it uses gradient)
+                v_g = -self.v_g.imag.mean()
+            else:
+                v_g=c
+            return to_meters(d=d,unit=unit, v_g=v_g)
+
     def thru(self, **kwargs):
         '''
         Matched transmission line of length 0.
@@ -758,28 +686,31 @@ class Media(object):
         line : this just calls line(0)
         '''
         return self.line(0,**kwargs)
-        
-    def line(self,d, unit='m',z0=None, embed = False, **kwargs):
+
+    def line(self,d, unit='deg',z0=None, embed = False, **kwargs):
         '''
         Transmission line of a given length and impedance
 
         The units of `length` are interpreted according to the value
         of `unit`. If `z0` is not None, then a line specified  impedance
-        is produced. if `embed`  is also True, then the line is embedded 
-        in this media's z0 environment, creating a mismatched line. 
+        is produced. if `embed`  is also True, then the line is embedded
+        in this media's z0 environment, creating a mismatched line.
 
         Parameters
         ----------
         d : number
                 the length of transmissin line (see unit argument)
-        unit : ['deg','rad','m','cm','um','in','mil','s']
+        unit : ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
                 the units of d.  See :func:`to_meters`, for details
-        z0 : number, or array-like
-                the impedance of the line (if different form z0)
+        z0 : number, string, or array-like
+                the characteristic impedance of the line, if different 
+                from self.z0. To set z0 in terms of normalized impedance,
+                pass a string, like `z0='1+.2j'`
+                
         embed : bool
-                if `z` is given, should the line be embedded in z0 
-                environment? or left in a `z` environment. if embedded, 
-                there will be reflections 
+                if `Z0` is given, should the line be embedded in z0
+                environment? or left in a `z` environment. if embedded,
+                there will be reflections
         \*\*kwargs : key word arguments
                 passed to :func:`match`, which is called initially to create a
                 'blank' network.
@@ -791,30 +722,31 @@ class Media(object):
 
         Examples
         ----------
-        >>> my_media.line(90, 'deg', z0=100)
+        >>> my_media.line(1, 'mm', z0=100)
+        >>> my_media.line(90,'deg',z0='2') # set z0 as normalized impedance
 
         '''
         
+        if isinstance(z0,str):
+            z0 = parse_z0(z0)* self.z0
+            
         kwargs.update({'z0':z0})
         result = self.match(nports=2,**kwargs)
 
-        theta = self.electrical_length(self.to_meters(d, unit))
+        theta = self.electrical_length(self.to_meters(d=d, unit=unit))
 
         s11 = npy.zeros(self.frequency.npoints, dtype=complex)
         s21 = npy.exp(-1*theta)
         result.s = \
                 npy.array([[s11, s21],[s21,s11]]).transpose().reshape(-1,2,2)
-        
+
         if  embed:
-                # create mismatchs at each end
-                m1 = self.impedance_mismatch(self.z0,z0)
-                m1.name = result.name
-                m2 = self.impedance_mismatch(z0,self.z0)
-                result = m1**result**m2
-                
+            result = self.thru()**result**self.thru()
+
         return result
 
-    def delay_load(self,Gamma0,d,unit='m',**kwargs):
+
+    def delay_load(self,Gamma0,d,unit='deg',**kwargs):
         '''
         Delayed load
 
@@ -827,11 +759,8 @@ class Media(object):
                 reflection coefficient of load (not in dB)
         d : number
                 the length of transmissin line (see unit argument)
-        unit : ['m','deg','rad']
-                the units of d. possible options are:
-                 * *m* : meters, physical length in meters (default)
-                 * *deg* :degrees, electrical length in degrees
-                 * *rad* :radians, electrical length in radians
+        unit : ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
+                the units of d.  See :func:`to_meters`, for details
         \*\*kwargs : key word arguments
                 passed to :func:`match`, which is called initially to create a
                 'blank' network.
@@ -844,7 +773,7 @@ class Media(object):
 
         Examples
         ----------
-        >>> my_media.delay_load(-.5, 90, 'deg', z0=50)
+        >>> my_media.delay_load(-.5, 90, 'deg', Z0=50)
 
 
         Notes
@@ -863,7 +792,7 @@ class Media(object):
         return self.line(d=d, unit=unit,**kwargs)**\
                 self.load(Gamma0=Gamma0,**kwargs)
 
-    def delay_short(self,d,unit='m',**kwargs):
+    def delay_short(self,d,unit='deg',**kwargs):
         '''
         Delayed Short
 
@@ -872,12 +801,9 @@ class Media(object):
         Parameters
         ----------
         d : number
-                the length of transmissin line (see unit argument)
-        unit : ['m','deg','rad']
-                the units of d. possible options are:
-                 * *m* : meters, physical length in meters (default)
-                 * *deg* :degrees, electrical length in degrees
-                 * *rad* :radians, electrical length in radians
+                the length of transmission line (see unit argument)
+        unit : ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
+                the units of d.  See :func:`to_meters`, for details
         \*\*kwargs : key word arguments
                 passed to :func:`match`, which is called initially to create a
                 'blank' network.
@@ -895,19 +821,16 @@ class Media(object):
         '''
         return self.delay_load(Gamma0=-1., d=d, unit=unit, **kwargs)
 
-    def delay_open(self,d,unit='m',**kwargs):
+    def delay_open(self,d,unit='deg',**kwargs):
         '''
         Delayed open transmission line
 
         Parameters
         ----------
         d : number
-                the length of transmissin line (see unit argument)
-        unit : ['m','deg','rad']
-                the units of d. possible options are:
-                 * *m* : meters, physical length in meters (default)
-                 * *deg* :degrees, electrical length in degrees
-                 * *rad* :radians, electrical length in radians
+                the length of transmission line (see unit argument)
+        unit : ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
+                the units of d.  See :func:`to_meters`, for details
         \*\*kwargs : key word arguments
                 passed to :func:`match`, which is called initially to create a
                 'blank' network.
@@ -1063,11 +986,11 @@ class Media(object):
         '''
         return self.shunt(self.inductor(L=L,*args,**kwargs)**self.short())
 
-    def attenuator(self, s21, db=True, d =0, unit='m', **kwargs):
+    def attenuator(self, s21, db=True, d =0, unit='deg', name='',**kwargs):
         '''
         Ideal matched attenuator of a given length
-        
-        Parameters 
+
+        Parameters
         ----------
         s21 : number, array-like
             the attenutation
@@ -1075,58 +998,78 @@ class Media(object):
             is s21 in db? otherwise assumes linear
         d : number
             length of attenuator
-        
-        unit : ['m','deg','rad']
-                the units of d. possible options are:
-                 * *m* : meters, physical length in meters (default)
-                 * *deg* :degrees, electrical length in degrees
-                 * *rad* :radians, electrical length in radians
-        
+
+        unit : ['deg','rad','m','cm','um','in','mil','s','us','ns','ps']
+                the units of d.  See :func:`to_meters`, for details
+
         Returns
         --------
         ntwk : :class:`~skrf.network.Network` object
                 2-port attentuator
-                
+
         '''
         if db:
             s21 = mf.db_2_magnitude(s21)
-         
-        result = self.match(nports=2)    
+
+        result = self.match(nports=2)
         result.s[:,0,1] = s21
         result.s[:,1,0] = s21
-        result = result**self.line(d=d, unit = unit, **kwargs)      
+        result = result**self.line(d=d, unit = unit, **kwargs)
+        result.name = name
         return result
-    
+
     def lossless_mismatch(self,s11,db=True,  **kwargs):
         '''
-        Lossless mismatch  defined by its return loss
-        
-        Parameters 
+        Lossless, symmetric mismatch defined by its return loss
+
+        Parameters
         ----------
-        s11 : number, array-like
+        s11 : complex number, number, or array-like
             the reflection coefficient. if db==True, then phase is ignored
-        
+
         db : bool
             is s11 in db? otherwise assumes linear
-        
+
         Returns
         --------
         ntwk : :class:`~skrf.network.Network` object
                 2-port lossless mismatch
-                
+
         '''
-        result = self.match(nports=2,**kwargs) 
+        result = self.match(nports=2,**kwargs)
         if db:
             s11 = mf.db_2_magnitude(s11)
-            
+
         result.s[:,0,0] = s11
         result.s[:,1,1] = s11
-        
-        result.s[:,0,1] = npy.sqrt(1- npy.abs(s11)**2)*\
-                npy.exp(1j*(npy.angle(s11)+npy.pi/2.*(npy.angle(s11)<0) -npy.pi/2*(npy.angle(s11)>0)))
+
+        s21_mag = npy.sqrt(1- npy.abs(s11)**2)
+        s21_phase = (npy.angle(s11) \
+                   + npy.pi/2 *(npy.angle(s11)<=0) \
+                   - npy.pi/2 *(npy.angle(s11)>0))
+        result.s[:,0,1] =  s21_mag* npy.exp(1j*s21_phase)
         result.s[:,1,0] = result.s[:,0,1]
-        return result   
+        return result
+    
+    def isolator(self,source_port=0,**kwargs):
+        '''
+        two-port isolator 
         
+        
+        Parameters
+        -------------
+        source_port: [0,1]
+            port at which power can flow from.
+        '''
+        result = self.thru(**kwargs)
+        if source_port==0:
+            result.s[:,0,1]=0
+        elif source_port==1:
+            result.s[:,1,0]=0
+        return result
+            
+        
+    
     ## Noise Networks
     def white_gaussian_polar(self,phase_dev, mag_dev,n_ports=1,**kwargs):
         '''
@@ -1163,17 +1106,25 @@ class Media(object):
         result.s = mag_rv*npy.exp(1j*phase_rv)
         return result
 
-    def random(self, n_ports = 1,**kwargs):
+    def random(self, n_ports=1, reciprocal=False, matched=False, 
+               symmetric=False, **kwargs):
         '''
         Complex random network.
 
-        Creates a n-port network whose s-matrix is filled with random 
-        complex numbers.
-        
+        Creates a n-port network whose s-matrix is filled with random
+        complex numbers. Optionaly, result can be matched or reciprocal.
+
         Parameters
         ----------
         n_ports : int
-                number of ports.
+            number of ports.
+        reciprocal : bool
+            makes s-matrix symmetric ($S_{mn} = S_{nm}$)
+        symmetric : bool
+            makes s-matrix diagonal have single value ($S_{mm}=S_{nn}$)
+        matched : bool
+            makes diagonals of s-matrix zero
+
         \*\*kwargs : passed to :class:`~skrf.network.Network`
                 initializer
 
@@ -1184,99 +1135,242 @@ class Media(object):
         '''
         result = self.match(nports = n_ports, **kwargs)
         result.s = mf.rand_c(self.frequency.npoints, n_ports,n_ports)
+        if reciprocal and n_ports>1:
+            for m in range(n_ports):
+                for n in range(n_ports):
+                    if m>n:
+                        result.s[:,m,n] = result.s[:,n,m]
+        if symmetric:
+            for m in range(n_ports):
+                for n in range(n_ports):
+                    if m==n:
+                        result.s[:,m,n] = result.s[:,0,0] 
+        if matched:
+            for m in range(n_ports):
+                for n in range(n_ports):
+                    if m==n:
+                        result.s[:,m,n] = 0
+
         return result
-        
+
     ## OTHER METHODS
-    def guess_length_of_delay_short(self, aNtwk):
+    def extract_distance(self,ntwk):
         '''
-        Guess physical length of a delay short.
+        Determines physical distance from a transmission or reflection ntwk
+        
+        Given a matched transmission or reflection measurment the 
+        physical distance is estimated at each frequency point based on 
+        the scattering parameter phase of the ntwk and propagation constant.
 
-        Unwraps the phase and determines the slope, which is then used
-        in conjunction with :attr:`propagation_constant` to estimate the
-        physical distance to the short.
-
+        Notes
+        -------
+        If the ntwk is a reflect measurement, the returned distance will  
+        be twice the physical distance.
+        
         Parameters
+        -----------
+        ntwk : `Network`
+            A one-port network of either the reflection or the transmission.
+            if
+        
+        Example
         ----------
-        aNtwk : :class:`~skrf.network.Network` object
-                (note: if this is a measurment
-                it needs to be normalized to the reference plane)
-
-
+        >>>air = rf.air50
+        >>>l = air.line(1,'cm')
+        >>>d_found = air.extract_distance(l.s21) 
+        >>>d_found
         '''
-        warnings.warn(DeprecationWarning('I have yet to update this for Media class'))
-        beta = npy.real(self.propagation_constant)
-        thetaM = npy.unwrap(npy.angle(-1*aNtwk.s).flatten())
+        if ntwk.nports ==1:
+            dphi = gradient(ntwk.s_rad_unwrap.flatten())
+            dgamma = gradient(self.gamma.imag)
+            return  -dphi/dgamma
+        else:
+            raise ValueError('ntwk must be one-port. Select s21 or s12 for a two-port.')
+    
 
-        A = npy.vstack((2*beta,npy.ones(len(beta)))).transpose()
-        B = thetaM
-        print A.shape
-        print B.shape
-        print npy.linalg.lstsq(A, B)[1]/npy.dot(beta,beta)
-        return npy.linalg.lstsq(A, B)[0][0]
+
+    def plot(self, *args, **kw):
+        return self.frequency.plot(*args, **kw)
 
     
+
+    def write_csv(self, filename='f,gamma,Z0,z0.csv'):
+        '''
+        write this media's frequency,gamma,Z0, and z0 to a csv file.
+
+        Parameters
+        -------------
+        filename : string
+            file name to write out data to
+
+        See Also
+        ---------
+        from_csv : class method to initialize Media object from a
+            csv file written from this function
+        '''
+
+        header = 'f[%s], Re(Z0), Im(Z0), Re(gamma), Im(gamma), Re(port Z0), Im(port Z0)\n'%self.frequency.unit
+        
+        g,z,pz  = self.gamma, \
+                self.Z0, self.z0
+
+        data = npy.vstack(\
+                [self.frequency.f_scaled, z.real, z.imag, \
+                g.real, g.imag, pz.real, pz.imag]).T
+
+        npy.savetxt(filename,data,delimiter=',',header=header)
+
+
+
+class DefinedGammaZ0(Media):
+    '''
+    A media directly defined by its propagation constant and 
+    characteristic impedance
+    
+    Parameters
+    --------------
+    frequency : :class:`~skrf.frequency.Frequency` object
+        frequency band of this transmission line medium. If None, will 
+        default to  1-10ghz, 
+
+
+    z0 : number, array-like, or None
+        The port impedance for media. Only needed if  its different
+        from the characterisitc impedance of the transmission
+        line. if `z0` is `None` then it will default to `Z0`
+ 
+    gamma : number, array-like
+        complex propagation constant. `gamma` must adhere to 
+        the following convention,
+            * positive real(gamma) = attenuation
+            * positive imag(gamma) = forward propagation
+        
+    Z0 : number, array-like
+        complex characteristic impedance.
+    '''
+    def __init__(self, frequency=None, z0=None, gamma=1j, Z0=50):
+        '''
+        '''
+        super(DefinedGammaZ0, self).__init__(frequency=frequency, 
+                                             z0=z0)
+        self.gamma= gamma
+        self.Z0 = Z0
     
     @classmethod
     def from_csv(cls, filename, *args, **kwargs):
         '''
-        create a Media from numerical values stored in a csv file. 
-        
-        the csv file format must be written by the function write_csv()
-        which produces the following format
-        
+        create a Media from numerical values stored in a csv file.
+
+        the csv file format must be written by the function write_csv(),
+        or similar method  which produces the following format
+
             f[$unit], Re(Z0), Im(Z0), Re(gamma), Im(gamma), Re(port Z0), Im(port Z0)
             1, 1, 1, 1, 1, 1, 1
             2, 1, 1, 1, 1, 1, 1
             .....
-            
+
         '''
         try:
             f = open(filename)
         except(TypeError):
             # they may have passed a file
             f = filename
-        
+
         header = f.readline()
         # this is not the correct way to do this ... but whatever
         f_unit = header.split(',')[0].split('[')[1].split(']')[0]
-        
+
         f,z_re,z_im,g_re,g_im,pz_re,pz_im = \
                 npy.loadtxt(f,  delimiter=',').T
-        
+
         return cls(
             frequency = Frequency.from_f(f, unit=f_unit),
-            characteristic_impedance = z_re+1j*z_im,
-            propagation_constant = g_re+1j*g_im,
+            Z0 = z_re+1j*z_im,
+            gamma = g_re+1j*g_im,
             z0 = pz_re+1j*pz_im,
             *args, **kwargs
             )
-            
-    def write_csv(self, filename='f,gamma,z0.csv'):
-        '''
-        write this media's frequency, z0, and gamma to a csv file. 
-        
-        Parameters
-        -------------
-        filename : string
-            file name to write out data to 
-            
-        See Also
-        ---------
-        from_csv : class method to initialize Media object from a 
-            csv file written from this function
-        '''
-        f = open(filename,'w')
-        header = 'f[%s], Re(Z0), Im(Z0), Re(gamma), Im(gamma), Re(port Z0), Im(port Z0)\n'%self.frequency.unit
-        f.write(header)
-            
-        g,z,pz  = self.propagation_constant, \
-                self.characteristic_impedance, self.z0
-        
-        data = npy.vstack(\
-                [self.frequency.f_scaled, z.real, z.imag, \
-                g.real, g.imag, pz.real, pz.imag]).T
-        
-        npy.savetxt(f,data,delimiter=',')
-        f.close()
+    @property
+    def npoints(self):
+        return self.frequency.npoints
     
+    @npoints.setter
+    def npoints(self,val):
+        # this is done to trigger checks on vector lengths for 
+        # gamma/Z0/z0
+        new_freq= self.frequency.copy()
+        new_freq.npoints = val
+        self.frequency = new_freq
+        
+    
+    @property
+    def frequency(self):
+        return self._frequency
+        
+    @frequency.setter
+    def frequency(self, val):
+        if hasattr(self, '_frequency') and self._frequency is not None:
+            
+            # they are updating the frequency, we may have to do somethign
+            attrs_to_test = [self._gamma, self._Z0, self._z0]
+            if any([has_len(k) for k in attrs_to_test]):
+                 raise NotImplementedError('updating a Media frequency, with non-constant gamma/Z0/z0 is not worked out yet')
+        self._frequency = val
+        
+    @property
+    def Z0(self):
+        '''
+        Characteristic Impedance 
+        '''
+        return self._Z0*ones(len(self))
+    
+    @Z0.setter
+    def Z0(self, val):
+        self._Z0 = val
+    
+    @property
+    def gamma(self):
+        '''
+        Propagation constant
+
+        Returns
+        ---------
+        gamma : :class:`numpy.ndarray`
+            complex propagation constant for this media
+
+        Notes
+        ------
+        `gamma` must adhere to the following convention,
+         * positive real(gamma) = attenuation
+         * positive imag(gamma) = forward propagation
+        '''
+        return self._gamma*ones(len(self))
+    
+    @gamma.setter
+    def gamma(self, val):
+        self._gamma = val
+
+def has_len(x):
+    '''
+    test of x  has any length  (ie is a vector)
+    
+    this is slightly non-trivial because [3] has len() but is 
+    doesnt really have any length
+    '''
+    try:
+        return (len(array(x))>1)
+    except TypeError:
+        return False
+
+def parse_z0(s):
+    # they passed a string for z0, try to parse it 
+    re_numbers = re.compile('\d+')
+    numbers = re.findall(re_numbers, s)
+    if len(numbers)==2:
+        out = float(numbers[0]) +1j*float(numbers[1])
+    elif len(numbers)==1:
+        out = float(numbers[0])
+    else:
+        raise ValueError('couldnt parse z0 string')
+    return out
     

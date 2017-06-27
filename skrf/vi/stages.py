@@ -3,9 +3,9 @@
 '''
 
 .. module:: skrf.vi.stages
-================================================
+++++++++++++++++++++++++++++++++++++++++++++++++++++
 Stages  (:mod:`skrf.vi.stages`)
-================================================
+++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .. autosummary::
     :toctree: generated/
@@ -15,21 +15,22 @@ Stages  (:mod:`skrf.vi.stages`)
 '''
 from time import sleep
 import numpy as npy
-from visa import GpibInstrument
+
+from . ivihack import Driver
 
 
-class ESP300(GpibInstrument):
+class ESP300(Driver):
     '''
     Newport Universal Motion Controller/Driver Model ESP300
 
     all axis control commands are sent to the number axis given by the
     local variable self.current_axis. An example usage ::
-        
+
         from skrf.vi.stages import ESP300
         esp = ESP300()
         esp.current_axis = 1
         esp.position = 10
-        print esp.position
+        print(esp.position)
     '''
     UNIT_DICT = {\
             'enoder count':0,\
@@ -49,13 +50,13 @@ class ESP300(GpibInstrument):
     def __init__(self, address=1, current_axis=1,\
             always_wait_for_stop=True,delay=0,**kwargs):
         '''
-        Initializer 
-        
+        Initializer
+
         Parameters
         -------------
         address :   int
             Gpib address
-        current_axis :   int 
+        current_axis :   int
             number of current axis
         always_wait_for_stop :   Boolean
             wait for stage to stop before
@@ -64,7 +65,12 @@ class ESP300(GpibInstrument):
             passed to GpibInstrument initializer
         '''
 
-        GpibInstrument.__init__(self,address,**kwargs)
+        if isinstance(address,int):
+            resource = 'GPIB::%i::INSTR'%address
+        else:
+            resource = address
+
+        Driver.__init__(self,resource = resource, **kwargs)
         self.current_axis = current_axis
         self.always_wait_for_stop = always_wait_for_stop
         self.delay=delay
@@ -155,7 +161,7 @@ class ESP300(GpibInstrument):
          takes:
                 input: a string, describing the units here are a list of
                         possibilities.
-                         'enoder count'
+                        'encoder count'
                         'motor step'
                         'millimeter'
                         'micrometer'
