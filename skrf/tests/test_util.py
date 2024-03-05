@@ -1,11 +1,11 @@
+import unittest
 
 import skrf as rf
-import unittest
 
 
 class HomoDictTest(unittest.TestCase):
-    '''
-    '''
+    """
+    """
     def setUp(self):
         self.h = rf.util.HomoDict({'a':'asdf','b':'ZZZZ'})
 
@@ -18,12 +18,13 @@ class HomoDictTest(unittest.TestCase):
 
 
     def test_boolean_mask(self):
-        self.assertEqual(self.h[self.h.startswith('a')==True], 'asdf')
+        match_key = [key for key in self.h.keys() if self.h[key].startswith('a') ]
+        self.assertEqual(self.h[match_key], 'asdf')
 
 
 class HomoListTest(unittest.TestCase):
-    '''
-    '''
+    """
+    """
     def setUp(self):
         self.h = rf.util.HomoList(['asdf','ZZZZ'])
 
@@ -36,4 +37,5 @@ class HomoListTest(unittest.TestCase):
 
 
     def test_boolean_mask(self):
-        self.assertEqual(self.h[self.h.startswith('a')==True], 'asdf')
+        match_idx = [idx for idx in range(len(self.h)) if self.h.startswith('a')]
+        self.assertEqual(self.h[match_idx], 'asdf')

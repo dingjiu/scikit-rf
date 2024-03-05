@@ -1,8 +1,14 @@
-import unittest
-import skrf as rf
 import os
+import unittest
 
+import numpy as np
+
+import skrf as rf
 from skrf import network2 as n2
+import pytest
+
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 def get_abs_file_path(filename):
     test_dir = os.path.dirname(os.path.abspath(__file__))+'/'
@@ -17,7 +23,7 @@ class Network2TestCase(unittest.TestCase):
         self.n = n2.Network(frequency=self.freq, s=self.s_2port, z0=50)
 
 
-    def get_abs_file_path(filename):
+    def get_abs_file_path(self, filename):
         return os.path.join(self.test_dir, filename)
 
     ## inits
@@ -26,13 +32,16 @@ class Network2TestCase(unittest.TestCase):
     #    n2.Network()
 
     def test_init_from_s(self):
-        n2.Network(frequency=self.freq, s=self.s_2port, z0=50)
+        net = n2.Network(frequency=self.freq, s=self.s_2port, z0=50)
+        assert np.allclose(net.s.val, self.s_2port, atol=1e-3)
 
     def test_init_from_z(self):
-        n2.Network(frequency=self.freq, z=self.s_2port, z0=50)
+        net = n2.Network(frequency=self.freq, z=self.s_2port, z0=50)
+        assert np.allclose(net.z.val, self.s_2port, atol=1e-3)
 
     def test_init_from_y(self):
-        n2.Network(frequency=self.freq, y=self.s_2port, z0=50)
+        net = n2.Network(frequency=self.freq, y=self.s_2port, z0=50)
+        assert np.allclose(net.y.val, self.s_2port, atol=1e-3)
 
     def test_init_from_ntwkv1(self):
         n2.Network.from_ntwkv1(rf.data.ring_slot)
@@ -41,13 +50,10 @@ class Network2TestCase(unittest.TestCase):
     def test_z(self):
         self.n.z
 
-    def test_z(self):
+    def test_y(self):
         self.n.y
 
-    def test_z(self):
-        self.n.y
-
-    def test_z(self):
+    def test_s_time(self):
         self.n.s_time
 
     ## existence of parameters

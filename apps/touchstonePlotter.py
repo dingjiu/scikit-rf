@@ -1,11 +1,11 @@
+import pylab as plb
+from plotTool import PlotTool
 from traits.api import *
-from traitsui.api import *#View, Item, ButtonEditor, Group, HSplit,
+from traitsui.api import *  #View, Item, ButtonEditor, Group, HSplit,
 from traitsui.menu import *
 
-import pylab as plb
 import skrf as rf
 
-from plotTool import PlotTool
 
 class TouchstonePlotter(HasTraits):
     cur_dir = Directory('')
@@ -29,7 +29,7 @@ class TouchstonePlotter(HasTraits):
     def _get_ntwk_dict(self):
         try:
             return rf.ran(self.cur_dir)
-        except(OSError):
+        except OSError:
             return {}
 
     def _get_available_ntwk_list(self):
@@ -38,13 +38,13 @@ class TouchstonePlotter(HasTraits):
     def _get_active_ntwk(self):
         try:
             return self.ntwk_dict[self.active_ntwk_name]
-        except:
+        except KeyError:
             pass
 
     def _get_ports(self):
         try:
             return ['All']+range(self.active_ntwk.nports)
-        except:
+        except TypeError:
             return []
 
     def _plot_button_fired(self):
@@ -63,10 +63,11 @@ class TouchstonePlotter(HasTraits):
 
 
         self.active_ntwk.__getattribute__(\
-            'plot_{}_{}'.format(self.param, form))(m=m, n=n)
+            f'plot_{self.param}_{form}')(m=m, n=n)
 
 
-        plb.draw();plb.show()
+        plb.draw()
+        plb.show()
 
     view = View(
         Item('cur_dir'),

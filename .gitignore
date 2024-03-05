@@ -1,5 +1,5 @@
 .ipynb_checkpoints
-.gitignore
+!.git*
 
 *.pyc
 *~
@@ -8,6 +8,7 @@
 *.p
 *generated*
 doc/build/*
+doc/build.log
 doc/gh-pages
 build/
 scikit_rf.egg-info/
@@ -15,3 +16,11 @@ dist/
 *.idea/
 *__pycache__/
 qtapps/sandbox*
+*.iml
+
+.vscode/
+.coverage
+.tox/
+.coverage*
+
+poetry.lock

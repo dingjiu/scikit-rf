@@ -1,5 +1,4 @@
-
-'''
+"""
 .. module:: skrf.media
 ========================================
 media (:mod:`skrf.media`)
@@ -15,7 +14,7 @@ by specific transmission line instances, such as
 :class:`~skrf.network.Network`'s for any transmission line medium, such
 as :func:`~media.Media.line` and :func:`~media.Media.delay_short`. These
 methods are inherited by the specific transmission line classes,
-which interally define relevant quantities such as propagation constant (`gamma`),
+which internally define relevant quantities such as propagation constant (`gamma`),
 and characteristic impedance (`Z0`). This allows the specific transmission line
 mediums to produce networks without re-implementing methods for
 each specific media instance.
@@ -25,29 +24,23 @@ each specific media instance.
 Media base-class
 -------------------------
 .. autosummary::
-    :toctree: generated/
-    :nosignatures:
+   :toctree: generated/
+   :nosignatures:
 
-    ~media.Media
+   ~media.Media
 
-Transmission Line Classes
--------------------------
-.. autosummary::
-    :toctree: generated/
-    :nosignatures:
-    
-    ~media.DefinedGammaZ0
-    ~distributedCircuit.DistributedCircuit
-    ~rectangularWaveguide.RectangularWaveguide
-    ~cpw.CPW
-    ~freespace.Freespace
-    ~coaxial.Coaxial
 
-'''
 
-from .media import Media, DefinedGammaZ0
+
+
+"""
+
+from .circularWaveguide import CircularWaveguide
+from .coaxial import Coaxial
+from .cpw import CPW
+from .definedAEpTandZ0 import DefinedAEpTandZ0
 from .distributedCircuit import DistributedCircuit
 from .freespace import Freespace
-from .cpw import CPW
+from .media import *
+from .mline import MLine
 from .rectangularWaveguide import RectangularWaveguide
-from .coaxial import Coaxial

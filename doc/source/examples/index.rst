@@ -3,8 +3,8 @@
 Examples
 =========
 
-These examples are meant to give an overview of how skrf can be used. 
-Each page can be followed along in a browser, or downloaded as an 
+These examples are meant to give an overview of how skrf can be used.
+Each page can be followed along in a browser, or downloaded as an
 ipython `notebook <http://ipython.org/notebook.html>`_
 
 Network Theory
@@ -13,16 +13,24 @@ Network Theory
 .. toctree::
     :maxdepth: 1
     :glob:
-    
+
     networktheory/*
 
-Metrology
+Matching
 ------------------
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    matching/*
+
+Metrology and Calibration
+--------------------------
 
 .. toctree::
     :maxdepth: 1
     :glob:
-    
+
     metrology/*
 
 
@@ -32,20 +40,62 @@ NetworkSets
 .. toctree::
     :maxdepth: 1
     :glob:
-    
+
     networksets/*
-    
+
 Plotting
 ------------------
 
 .. toctree::
     :maxdepth: 1
     :glob:
-    
-    plotting/*
-    
 
-    
+    plotting/*
+
+Circuit
+------------------
+
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    circuit/*
+
+Mixed Mode
+------------------
+
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    mixedmodeanalysis/*
+
+Vector Fitting
+------------------
+
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    vectorfitting/*
+
+Q-factor
+------------------
+
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    qfactor/*
+
+Taper
+------------------
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    taper/*
+
 
 Internals
 ------------------
@@ -53,14 +103,23 @@ Internals
 .. toctree::
     :maxdepth: 1
     :glob:
-    
+
     internals/*
-    
+
+Instrument Control
+------------------
+
+.. toctree::
+    :maxdepth: 1
+    :glob:
+
+    instrumentcontrol/*
+
 Interactive
 ------------------
 
 .. toctree::
     :maxdepth: 1
     :glob:
-    
+
     interactive/*

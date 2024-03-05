@@ -1,15 +1,18 @@
-import unittest
 import os
+import unittest
+
 from skrf.media import DistributedCircuit
 from skrf.network import Network
+
+
 class MediaTestCase(unittest.TestCase):
-    '''
+    """
 
-    '''
+    """
     def setUp(self):
-        '''
+        """
 
-        '''
+        """
         self.files_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             'qucs_prj'
@@ -23,8 +26,8 @@ class MediaTestCase(unittest.TestCase):
                 )
 
     def test_line(self):
-        '''
-        '''
+        """
+        """
         fname = os.path.join(self.files_dir,\
                 'distributedCircuit,line1mm.s2p')
         qucs_ntwk = Network(fname)
